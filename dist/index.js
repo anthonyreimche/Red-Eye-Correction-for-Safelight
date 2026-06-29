@@ -641,7 +641,11 @@ export function activate(api) {
         // Click-through during a pan/zoom gesture so the viewport beneath drives
         // pan/zoom; otherwise we own the pointer for placing/editing corrections.
         pointerEvents: passthrough ? "none" : "auto",
-        cursor: passthrough ? "default" : "crosshair",
+        // Use the app's shared crosshair token (so Custom Cursors themes restyle it)
+        // instead of a hardcoded CSS keyword; fall back on older Safelight builds.
+        cursor: passthrough
+          ? "default"
+          : (api.cursors && api.cursors.resolve ? api.cursors.resolve("crosshair") : "crosshair"),
       },
       onPointerDown, onPointerMove, onPointerUp: endDrag, onPointerCancel: endDrag,
       onPointerLeave: () => setCursor(null),
@@ -663,6 +667,12 @@ export function activate(api) {
     const [status, setStatus] = React.useState("");
     const [, bump] = React.useReducer((n) => n + 1, 0);
     React.useEffect(() => api.settings.onChange(bump), []); // live ⚙ edits
+
+    // Generic chrome (buttons, layout) comes from the shared core UI kit so it
+    // matches the app exactly; the Slider is a core component and the on-canvas
+    // ring overlay is bespoke domain UI, both left as-is.
+    if (!api.ui) return h("div", { style: { padding: "10px", fontSize: "11px", color: "var(--color-text-muted)" } }, "Update Safelight to use this panel.");
+    const { Button, Row } = api.ui;
 
     const spots = readSpots(paramBag);
     const sel = selected != null ? spots.find((s) => s.slot === selected) || null : null;
@@ -725,12 +735,6 @@ export function activate(api) {
       applySpot(sel.slot, null, par, false);
     };
 
-    const btn = "rounded px-2 py-1 text-[11px]";
-    const toggleBtn = active
-      ? "bg-accent/30 text-text-primary"
-      : "bg-surface-2 text-text-secondary hover:text-text-primary";
-    const plainBtn = "bg-surface-2 text-text-secondary hover:text-text-primary";
-
     const editor = h("div", { className: "space-y-0.5 rounded bg-surface-2/50 p-1.5", key: "editor" },
       h(Slider, { label: "Size", value: sizeVal, min: 0.2, max: 10, step: 0.1, defaultValue: DEFAULTS.size, onChange: setSize, onCommit: () => sel && commit() }),
       h(Slider, { label: "Darken", value: darkenVal, min: 0, max: 100, step: 1, defaultValue: DEFAULTS.darken, onChange: (v) => setPar("darken", v), onCommit: () => sel && commit() }),
@@ -740,17 +744,20 @@ export function activate(api) {
 
     return h(Panel, { title: "Red Eye" },
       h("div", { className: "space-y-2" },
-        h("div", { className: "flex items-center gap-1" },
-          h("button", {
-            className: `${btn} ${toggleBtn}`,
+        h(Row, { gap: 4, align: "center" },
+          h(Button, {
+            variant: "primary",
+            active,
+            full: true,
             disabled: !photoId,
             onClick: () => setActive(!active),
           }, active ? "Done" : "Correct"),
-          h("button", {
-            className: `${btn} ${plainBtn}`,
+          h(Button, {
+            variant: "secondary",
+            full: true,
             disabled: busy || !photoId,
             onClick: detect,
-          }, busy ? "Scanning…" : "Auto-detect all"),
+          }, busy ? "Scanning…" : "Auto-detect"),
         ),
         active && h("div", { className: "text-[10px] text-text-muted" }, TOOL_HINT),
         status && h("div", { className: "text-[10px] text-text-muted" }, status),
@@ -761,11 +768,12 @@ export function activate(api) {
             h("div", {
               key: s.slot,
               onClick: () => { useTool.getState().select(s.slot); setActive(true); },
-              className: "flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-[11px] " +
+              className: "group flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-[11px] " +
                 (s.slot === selected ? "bg-accent/20 text-text-primary" : "text-text-secondary hover:bg-surface-2"),
             },
-              h("button", {
-                className: "shrink-0 rounded px-0.5",
+              h(Button, {
+                variant: "ghost",
+                size: "sm",
                 title: s.enabled ? "Hide" : "Show",
                 onClick: (e) => {
                   e.stopPropagation();
@@ -774,16 +782,20 @@ export function activate(api) {
                 },
               }, s.enabled ? "◉" : "○"),
               h("span", { className: "flex-1 truncate" }, `Eye ${i + 1}`),
+              // Match the app's hover-reveal delete control (core MasksPanel): a
+              // muted "×" hidden until the row (.group) is hovered, then shown
+              // (group-hover:opacity-100) and turning red on its own hover.
               h("button", {
-                className: "shrink-0 rounded px-1 text-text-muted hover:text-label-red",
+                type: "button",
                 title: "Remove",
+                className: "rounded px-1 text-text-muted opacity-0 hover:text-label-red group-hover:opacity-100",
                 onClick: (e) => {
                   e.stopPropagation();
                   removeSpot(s.slot);
                   if (selected === s.slot) useTool.getState().select(null);
                   commit();
                 },
-              }, "✕"),
+              }, "×"),
             ),
           ),
         ),
